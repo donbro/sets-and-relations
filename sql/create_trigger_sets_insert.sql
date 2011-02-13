@@ -72,16 +72,23 @@ as
                      
     invalid     (ignored)       doesn't match           "created_set_id"    create new set_id.  undefined seq_no, insert name
 
-    valid        null           valid                  N/A             create new seq_no, insert id+name
+    new         (auto)          (new value)             "inserted"          inserted set_id, set_name as entered.
 
-    valid        valid          valid                  N/A             updates name at set_id+set_seq_no
+    existing     new            (any)                   "inserted"          inserted synonym.
+
+    existing     existing       (updated value)         "updated"           updates name at set_id+set_seq_no
     
     
+*/
+
+/*
+    set_seq_no 
+        
     set_seq_no takes part in *no* queries(?)  
     
-    the value is entirely "pass-through" with regards to this trigger.
+    set_seq_no is entirely "pass-through" with regards to this trigger.
 
-    will be passively inserted if specified, otherwise automatically "sequenced" within set_id.
+    set_seq_no will be inserted if entered, otherwise automatically "sequenced" within set_id.
     
     set_seq_no has a default of 0.  this is (almost) immediately "sequenced" to be 
         one plus the current max set_seq_no for the set_id.
@@ -90,16 +97,22 @@ as
 */
 
 
-    /* "found"   (ie, matched on name)
-     *  (1) set_id is invalid and (2) set_name is a match, return *all* matching records
-     *  (possibly from different set_id's) 
+    /* 
+     *  "found"   (a query: a match on name returns matching records.)
+     *
+     *  (1) set_id is invalid and 
+     *  (2) set_name is a match.
+     *
+     *  Return *all* matching records (possibly from different set_id's) .
+     *
+     *  Delete the record(s) that formed the query(s).  
+     *  No records should end up being inserted due to a query.
+     *
      */
      
      /* this query uses the fact that existing set records have valid set_ids.
             only inserted records can have invalid set_ids. */
             
-    /* will have to delete the record that formed the query.  no records should end up being inserted due
-            to a query  */
     
     insert tempdb..sets
         select 
@@ -109,7 +122,82 @@ as
         and     inserted.set_id not like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is invalid
         and     sets.set_id  like "set[0-9][0-9][0-9][0-9][0-9]"
 
- 
+
+    /* 
+     *  "inserted"      (valid and new (not pre-existing) set_id)
+     *
+     *  (1) set_id is valid and 
+     *  (2) set_id is not a match for any existing *before* insert.
+     *
+     *  nothing needs be done.  we're just doing the simple, basic SQL insert here.  oh and then we auto-seq :-)
+     
+     *  return inserted records that match this section: valid set_id and no previously existing set_id.  
+     *
+     *  later: could return "inserted" for no previously existing and "updated" for same but did previously exist.
+     *  
+     *  use fact that at this point there will only be *one* record in all of sets
+     *      with this set_id?  All updates will have two, all queries dont have a valid set_id.
+     *
+     *  auto-seq routine at end will
+     *      update all null set_seq_no's at once.
+     *
+     */
+
+     /* this won't return an insert of a synonym where the set_id matches but the seq_no is new (or zero at this point)
+            Use match on set_id and set_seq_no to ensure that we find 
+            newly inserted records that are new seq_no's but for an existing set_id.
+            */
+
+    insert tempdb..sets
+        select 
+            "inserted" "query_status", ins.set_id	,	ins.set_seq_no, ins.set_name,	ins.set_super_id   
+        from inserted ins
+        where       ins.set_id like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is valid
+        and     (select count(*) from sets b where ins.set_id = b.set_id 
+                        and ins.set_seq_no = b.set_seq_no ) = 1  -- no other record with this set_id and seq_no
+
+    /* 
+     *  "inserted"      (valid and new (not pre-existing) set_id)
+     *
+     *  (1) set_id is valid and 
+     *  (2) set_id is a match for one existing record from before insert, so exactly two currently.
+     *
+     *  nothing needs be done here; have to delete the existing record at delete time.
+     *
+     */
+     
+
+    insert tempdb..sets
+        select 
+            "updated(1)" "query_status", ins.set_id	,	ins.set_seq_no, ins.set_name,	ins.set_super_id   
+        from inserted ins
+        where       ins.set_id like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is valid
+        and     (select count(*) from sets b where ins.set_id = b.set_id 
+                        and ins.set_seq_no = b.set_seq_no ) = 2  -- just one other record with this set_id and seq_no
+
+    /* this second approach is based not on the appearance of two records but 
+            more on the fact that there is an inserted name that doesn't match a record
+            with set_id, seq_no but a different set_name. */
+    
+    insert tempdb..sets
+        select 
+            "updated(2)" "query_status", ins.set_id	,	ins.set_seq_no, ins.set_name,	ins.set_super_id   
+        from sets, inserted ins
+        where   sets.set_id     = ins.set_id
+        and     sets.set_seq_no = ins.set_seq_no
+        and     sets.set_name  != ins.set_name      -- add any other fields which might be part of any possible update.
+        and     ins.set_id like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is valid
+     
+     
+    /* 
+     *  "created_set_id"   (invalid set_id)
+     *
+     *  (1) set_id is invalid and 
+     *  (2) set_name does not match (is not one of) those that already exist (ie, that has a valid set_id)
+     
+     */
+     
+     
     declare @max_set_id char(8)	-- set_id datatype?
     declare @max_set_id_index int
 
@@ -166,26 +254,6 @@ as
 
 
 
-    /*  update the output table */
-    
-/*
-    update  tempdb..sets 
-        set a.set_id = (
-            select "set" + right( "00000" +
-                ltrim( str(	 
-                    @max_set_id_index 
-                    + (select count( b.set_name ) from sets b 
-                       where (a.set_id + a.set_name) > ( b.set_id + b.set_name ) 
-                       and b.set_id not like 'set[0-9][0-9][0-9][0-9][0-9]')
-                   ))
-               ,5)
-        )
-    from tempdb..sets a, inserted
-    where   a.set_name = inserted.set_name	-- if ids are the same in inserted table, then distinguish via name.  unique index on id,name will prevent dups here.
-    and     a.set_id   = inserted.set_id	
-    and     inserted.set_id not like "set[0-9][0-9][0-9][0-9][0-9]"
-
-*/
         
     update  sets 
         set a.set_id = (
@@ -208,15 +276,21 @@ as
 
 
 
-    
-    /* 
-     * Update node sequence numbers based on count/ranking within each set_id.
+    /*
+     *  auto-seq
+     *
+     * 
+     *  Update node sequence numbers based on count/ranking within each set_id.
+     *
+     *
+     *  the field set_seq_no has a default of 0.  this is the clue to "sequence" the record
+     *  which is to update the seq_no to one plus the current max set_seq_no for the set_id. 
+     *
+     *
+     * update tempdb first because we are using values from sets to do this calc. 
      *
      */
-/*      set_seq_no has a default of 0.  this is (almost) immediately "re-sequenced" to be 
-        one plus the current max set_seq_no for the set_id. */
-     
-     /* update tempdb first because we are using values from sets to do this calc. */
+
      
     update tempdb..sets
     set a.set_seq_no = 
@@ -237,37 +311,14 @@ as
 
 
 
-
-        
---    select "created"  "query status (temp)", set_id   , 
---        set_seq_no  , set_super_id , 
---        convert(char(64),set_name) "set_name"
---    from tempdb..sets 
-     
-    /* create feedback to calling routine based on whether or not we created any new set_ids */
-    /* TODO: there's no way to remember/retain which records are actually being updated
-        with either new ids or new seq_no's.  Really, there's no way, once we update either
-        set_id or set_seq_no to remember even which records were inserted.  A hack is to
-        look for set_id's larger than any when we first began but this fails if there
-        are already larger set_id's present when we insert. */
-
-    /* temp tables to retain those records updated? */
+    /* 
+     *  "updated"   (valid and existing set_id)
+     *
+     *
+*/
 
 /*
-
-    if @updated_rowcount > 0 
-        -- convert char(80) just for testing convenience.  remove before wrapping :-)
-        
-        select "created"  "query status (sets)", sets.set_id   , sets.set_seq_no  , sets.set_super_id , convert(char(80),sets.set_name) "set_name"
-            from sets , inserted
-            where sets.set_name = inserted.set_name	
-            and sets.set_id >= @max_set_id -- = ( select max(set_id) from sets )
-    else  
-        select "inserted" "query status", sets.* 
-            from sets , inserted
-            where sets.set_name = inserted.set_name	
-            and sets.set_id = inserted.set_id	
-
+    There is a unique index on sets ( set_id, set_seq_no, set_name )
 */
 
    /* 
@@ -293,7 +344,7 @@ as
             from sets, inserted 
     where   sets.set_id     = inserted.set_id
     and     sets.set_seq_no = inserted.set_seq_no
-    and     sets.set_name  != inserted.set_name      -- have to add any other fields which might be different ?!
+    and     sets.set_name  != inserted.set_name      -- add any other fields which might be part of any possible update.
 
     /* if we delete any rows, tell the caller about it. */
     
@@ -449,3 +500,26 @@ go
         Set_ids are possibly all the same at this point; 
         but the combination of Set_ids and set_names will be different
         because of the unique index). */
+        
+        
+    /*  update the output table */
+    
+/*
+    update  tempdb..sets 
+        set a.set_id = (
+            select "set" + right( "00000" +
+                ltrim( str(	 
+                    @max_set_id_index 
+                    + (select count( b.set_name ) from sets b 
+                       where (a.set_id + a.set_name) > ( b.set_id + b.set_name ) 
+                       and b.set_id not like 'set[0-9][0-9][0-9][0-9][0-9]')
+                   ))
+               ,5)
+        )
+    from tempdb..sets a, inserted
+    where   a.set_name = inserted.set_name	-- if ids are the same in inserted table, then distinguish via name.  unique index on id,name will prevent dups here.
+    and     a.set_id   = inserted.set_id	
+    and     inserted.set_id not like "set[0-9][0-9][0-9][0-9][0-9]"
+
+*/
+        

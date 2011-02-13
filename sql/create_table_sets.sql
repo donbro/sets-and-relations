@@ -7,7 +7,8 @@ drop table sets
 go
 
 /*         set_ids are: set00001, etc. Yes, five places.  100,000 sets!       */
-
+/*      set_seq_no has a default of 0.  this is (almost) immediately "re-sequenced" to be 
+        one plus the current max set_seq_no for the set_id. */
 
 create table sets (
 	set_id		    char(8)		    default ""      not null, 
