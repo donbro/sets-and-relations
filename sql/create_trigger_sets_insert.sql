@@ -3,50 +3,52 @@
 use relations
 go
 
-    /*  Temp table used to accumulate output results formatted
-          for return to calling routine.
-        Possibly not needed?  Useful during development.
-     */
+/*  
+ *  tempdb..sets
+ *
+ *  tempdb..sets is used to accumulate records for output.
+ *
+ *  (this table is possibly not needed; but (1) useful during development and (2)
+        will be needed if we can't write the big union :)
+    We are currently inserting rows into output table as we come to them.
+        could possibly just do one large union at end and not need a temp table?
+        
+ *
+ */
      
 drop table tempdb..sets
 go
 
-/* Create empty table (ie, header only) via select into */
-
-select convert(char(14),"") "query_status", sets.* into tempdb..sets 
-    from sets where 0 = 1 
+select 
+    convert(char(14),"") "query_status", sets.* 
+into tempdb..sets 
+from sets where 0 = 1 
 go
---select * from tempdb..sets -- testing
---go
 
-/*
-    Four columns, semantics for various combinations of valid or invalid/default/null input:
-
- 	set_id      set_seq_no   	set_name,	            set_super_id
- 	------      ----------      --------                ------------
-    
-    invalid     (ignored)       valid but no match      ?               create new set_id.  undefined seq_no, insert name
-
-    invalid     (ignored)       valid and match         ?               return all matching existing records.
-                     
-    valid        null           valid                  N/A             create new seq_no, insert id+name
-
-    valid        valid          valid                  N/A             updates name at set_id+set_seq_no
-
-*/
-
-/* less width debugging quick look display: */
+/* debug/quicklook view on tempdb..sets */
 
 drop view temp_sets_quick_look
 go
 create view temp_sets_quick_look as
-        select  a.query_status          "query_status_quick", 
-                a.set_id, 
-                convert(char(2), a.set_seq_no)      "seq", 
-                a.set_super_id , 
-                convert(char(64),a.set_name) "set_name_64"
+    select  a.query_status          "query_status_quick", 
+            a.set_id, 
+            convert(char(2), a.set_seq_no)      "seq", 
+            a.set_super_id , 
+            convert(char(64),a.set_name) "set_name_64"
     from tempdb..sets a
 go
+
+/*  
+ *  trigger sets_insert
+ *
+ *  trigger sets_insert is...
+ 
+ also:
+ /*      set_seq_no has a default of 0.  this is (almost) immediately "re-sequenced" to be 
+        one plus the current max set_seq_no for the set_id. */
+
+ *
+ */
 
 create trigger sets_insert
 on sets
@@ -56,21 +58,56 @@ as
 
     /* truncate output table. */
     
-    /* We are currently inserting rows into output table as we come to them.
-        could possibly just do one large union at end and not need a temp table? */
-
-    
     delete from tempdb..sets where 1 = 1
 
-    /* if set_id is invalid but set_name is a match, return *all* matching (valid) records */
 
+/*
+
+    Expected action(s)/output(s):
+
+ 	set_id      set_seq_no   	set_name	            query_status
+ 	------      ----------      --------                ------------
+    
+    invalid     (ignored)       matches existing        "found"             return all matching existing records.
+                     
+    invalid     (ignored)       doesn't match           "created_set_id"    create new set_id.  undefined seq_no, insert name
+
+    valid        null           valid                  N/A             create new seq_no, insert id+name
+
+    valid        valid          valid                  N/A             updates name at set_id+set_seq_no
+    
+    
+    set_seq_no takes part in *no* queries(?)  
+    
+    the value is entirely "pass-through" with regards to this trigger.
+
+    will be passively inserted if specified, otherwise automatically "sequenced" within set_id.
+    
+    set_seq_no has a default of 0.  this is (almost) immediately "sequenced" to be 
+        one plus the current max set_seq_no for the set_id.
+
+
+*/
+
+
+    /* "found"   (ie, matched on name)
+     *  (1) set_id is invalid and (2) set_name is a match, return *all* matching records
+     *  (possibly from different set_id's) 
+     */
+     
+     /* this query uses the fact that existing set records have valid set_ids.
+            only inserted records can have invalid set_ids. */
+            
+    /* will have to delete the record that formed the query.  no records should end up being inserted due
+            to a query  */
+    
     insert tempdb..sets
-        select "found" "query_status", a.set_id	,	a.set_seq_no, a.set_name,	a.set_super_id   
-        from sets a, inserted
-        where   inserted.set_id not like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is invalid
-        and     inserted.set_name = a.set_name                              --  and set_name matches
-        and     a.set_id  like "set[0-9][0-9][0-9][0-9][0-9]"
-        --  != inserted.set_id	                            --  an existing record (not one just inserted).
+        select 
+            "found" "query_status", sets.set_id	,	sets.set_seq_no, sets.set_name,	sets.set_super_id   
+        from sets, inserted
+        where   inserted.set_name = sets.set_name                              --  and set_name matches
+        and     inserted.set_id not like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is invalid
+        and     sets.set_id  like "set[0-9][0-9][0-9][0-9][0-9]"
 
  
     declare @max_set_id char(8)	-- set_id datatype?
@@ -80,18 +117,30 @@ as
      * find max of existing, valid set_id's.  exclude any badly formed ids which would have to be from the insertion. 
      */
 
-    select @max_set_id_index  =  
-						isnull( convert( integer, right ( max( c.set_id ) , 5 ) ) + 1 , 1 )
-    from sets c where c.set_id like "set[0-9][0-9][0-9][0-9][0-9]"  
+    select 
+        @max_set_id_index = isnull( convert( integer, right ( max( c.set_id ) , 5 ) ) + 1 , 1 )
+    from sets c 
+    where c.set_id like "set[0-9][0-9][0-9][0-9][0-9]"  
 
-    exec n2nid @max_set_id_index ,  "set", "00000",  @max_set_id output
+    select  @max_set_id =  "set" + right( "00000" +    ltrim( str( @max_set_id_index ) )   , char_length( "00000" ) ) 
+
+    -- exec n2nid @max_set_id_index ,  "set", "00000",  @max_set_id output
 
 
-    /* invalid set_ids */
+     /* "created_set_id" 
+     *  (1) set_id is not valid and 
+     *  (2) set_name (a) does not match an entry with a valid set_id (ie, is an existing entry)
+     */
+
+   /* invalid set_ids */
     
-    /* copy invalid set_id rows from inserted, then update both the sets table and the tempdb table for output */
+    /* actions:
+        (1) insert records into tempdb but with newly created set_ids
+        (2) update inserted records via sequence-generating select.
+       return:
+        updated records
+     */
 
-    /* we can do the insert and the following update in one insert statement. ;-) */
     /* have to exclude matching records that were included above */
     
     insert tempdb..sets
@@ -159,15 +208,13 @@ as
 
 
 
---    declare @updated_rowcount int
---    select @updated_rowcount  = @@rowcount
-
-
     
     /* 
      * Update node sequence numbers based on count/ranking within each set_id.
      *
      */
+/*      set_seq_no has a default of 0.  this is (almost) immediately "re-sequenced" to be 
+        one plus the current max set_seq_no for the set_id. */
      
      /* update tempdb first because we are using values from sets to do this calc. */
      
@@ -269,28 +316,38 @@ as
             
     end
  
+    /* "found"   (ie, matched on name)
+            
+        delete the record that formed the query.  no records should end up being inserted due
+            to a query
    
-    /* delete those inserted rows from sets which are actually queries
-            (but not until the end when we have already processed the other cases.)*/
+        delete those inserted rows from sets which are actually queries
+            (but not until the end when we have already processed the other cases.)
+            
+        delete the one(s) which is *not* the existing, matching, one(s).
+            
+    */
 
  
    delete sets
-       from sets a, inserted
-   where   inserted.set_id not like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is invalid
-   and     inserted.set_name = a.set_name                              --  and set_name matches
-   and     a.set_id  = inserted.set_id             -- delete the one which is *not* the existing, matching, one.
+       from sets, inserted
+   where   inserted.set_name = sets.set_name                              --  and set_name matches
+   and      inserted.set_id not like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is invalid
+   and     sets.set_id  = inserted.set_id             -- delete the one which is *not* the existing, matching, one.
 
 
-
+   /* output (returned select set) table */
 
    select * from temp_sets_quick_look
     order by set_id, seq -- column name of view is not "set_seq_no" because we convert to char(3) for output.
 
 
-    select * from sets_short_view    
-    order by set_id, seq
+   -- /* quick/debug look at entire sets table */
+   -- 
+   --  select * from sets_short_view    
+   --  order by set_id, seq
     
-    print "end trigger sets_insert"
+    -- print "end trigger sets_insert"
 
     return -- all we need to do for volume inserts and queries
 

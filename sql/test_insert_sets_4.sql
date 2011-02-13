@@ -43,7 +43,18 @@ go
  *   
  */
 
--- Any name, no seq_no and existing set_id ==> New sequence number at existing set_id:
+--insert another 'Albert Einstein' but with a different set_id.  repeat find and expect both records returned.
+
+INSERT INTO sets (set_id, set_name) values ( "set00002" , 'Albert Einstein' )
+INSERT INTO sets (set_name) values ("Albert Einstein")
+go
+
+ -- query_status_quick set_id   seq set_super_id set_name_64                                                      
+ -- ------------------ -------- --- ------------ ---------------------------------------------------------------- 
+ -- found              set00001 1   NULL         Albert Einstein                                                  
+ -- found              set00002 1   NULL         Albert Einstein                                                  
+
+-- insert synonym:  valid name, no seq_no and existing set_id ==> New sequence number at existing set_id:
 
 INSERT INTO sets (set_id, set_name) values ( "set00001" , 'Albert Einstein 2' )
 
@@ -63,6 +74,13 @@ INSERT INTO sets (set_id, set_seq_no, set_name) values ( "set00001" , 1,  'Alber
  -------- --- ------------ ---------------------------------------------------------------- 
  set00001 1   NULL         Albert Einstein 3                                                
 */
+
+
+   /* quick/debug look at entire sets table */
+
+print "quick/debug look at entire sets table"
+select * from sets_short_view    
+    order by set_id, seq
 
 /* mix of updates and insertions */
 

@@ -2,93 +2,28 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>currentDocument</key>
-	<string>../sql/test_insert_sets_4.sql</string>
 	<key>documents</key>
 	<array>
 		<dict>
 			<key>filename</key>
 			<string>../sql/create_table_sets.sql</string>
-			<key>lastUsed</key>
-			<date>2011-01-23T04:29:52Z</date>
-		</dict>
-		<dict>
-			<key>filename</key>
-			<string>../sql/create_proc_nid2n.sql</string>
-			<key>lastUsed</key>
-			<date>2011-01-22T09:17:35Z</date>
 		</dict>
 		<dict>
 			<key>filename</key>
 			<string>../sql/create_trigger_sets_insert.sql</string>
-			<key>lastUsed</key>
-			<date>2011-01-25T05:29:28Z</date>
 		</dict>
 		<dict>
 			<key>filename</key>
 			<string>../sql/test_insert_sets_4.sql</string>
-			<key>lastUsed</key>
-			<date>2011-01-25T05:29:28Z</date>
-			<key>selected</key>
-			<true/>
 		</dict>
 	</array>
 	<key>fileHierarchyDrawerWidth</key>
 	<integer>200</integer>
 	<key>metaData</key>
-	<dict>
-		<key>../sql/create_table_sets.sql</key>
-		<dict>
-			<key>caret</key>
-			<dict>
-				<key>column</key>
-				<integer>0</integer>
-				<key>line</key>
-				<integer>37</integer>
-			</dict>
-			<key>firstVisibleColumn</key>
-			<integer>0</integer>
-			<key>firstVisibleLine</key>
-			<integer>0</integer>
-		</dict>
-		<key>../sql/create_trigger_sets_insert.sql</key>
-		<dict>
-			<key>caret</key>
-			<dict>
-				<key>column</key>
-				<integer>104</integer>
-				<key>line</key>
-				<integer>33</integer>
-			</dict>
-			<key>firstVisibleColumn</key>
-			<integer>0</integer>
-			<key>firstVisibleLine</key>
-			<integer>10</integer>
-		</dict>
-		<key>../sql/test_insert_sets_4.sql</key>
-		<dict>
-			<key>caret</key>
-			<dict>
-				<key>column</key>
-				<integer>0</integer>
-				<key>line</key>
-				<integer>300</integer>
-			</dict>
-			<key>firstVisibleColumn</key>
-			<integer>0</integer>
-			<key>firstVisibleLine</key>
-			<integer>225</integer>
-		</dict>
-	</dict>
-	<key>openDocuments</key>
-	<array>
-		<string>../sql/create_table_sets.sql</string>
-		<string>../sql/create_trigger_sets_insert.sql</string>
-		<string>../sql/test_insert_sets_4.sql</string>
-	</array>
+	<dict/>
 	<key>showFileHierarchyDrawer</key>
-	<false/>
+	<true/>
 	<key>windowFrame</key>
-	<string>{{189, 34}, {902, 791}}</string>
+	<string>{{210, 11}, {902, 791}}</string>
 </dict>
 </plist>
