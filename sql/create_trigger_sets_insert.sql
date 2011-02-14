@@ -4,9 +4,13 @@ use relations
 go
 
 /*  
- *  tempdb..sets
  *
- *  tempdb..sets is used to accumulate records for output.
+ *  temporary table tempdb..sets is used to accumulate records for output.
+ *
+ *  triggers can't create a temp table, so we rely on having one before the trigger fires.
+ *  ==> this means that we have to create the table at startup? beginning of each connection?
+ *
+ *  truncate temp table at start of trigger.  return contents of temp table at end of trigger.
  *
  *  (this table is possibly not needed; but (1) useful during development and (2)
         will be needed if we can't write the big union :)
@@ -70,7 +74,7 @@ as
     
     invalid     (ignored)       matches existing        "found"             return all matching existing records.
                      
-    invalid     (ignored)       doesn't match           "created_set_id"    create new set_id.  undefined seq_no, insert name
+    invalid     (auto)          doesn't match           "created_set_id"    create new set_id.  auto-sequenced seq_no (probably 0), insert name
 
     new         (auto)          (new value)             "inserted"          inserted set_id, set_name as entered.
 
@@ -194,16 +198,28 @@ as
      *
      *  (1) set_id is invalid and 
      *  (2) set_name does not match (is not one of) those that already exist (ie, that has a valid set_id)
-     
+     *
+     *  actions:
+     *    (1) insert records into tempdb but with newly created set_ids
+     *    (2) update inserted records via sequence-generating select.
+       return:
+        updated records
+
      */
      
      
+    /*  
+     *  auto-sequence for set_id values
+     *  
+     *  @max_set_id_index is (integer) one plus maximum of existing, valid set_id's.  
+        Since all existing records must have well-formed ids,
+            the badly formed ids which would have to be from the insertion. 
+        @max_set_id is the string (node_id) type value eg "set00001"
+     */
+
+
     declare @max_set_id char(8)	-- set_id datatype?
     declare @max_set_id_index int
-
-    /* 
-     * find max of existing, valid set_id's.  exclude any badly formed ids which would have to be from the insertion. 
-     */
 
     select 
         @max_set_id_index = isnull( convert( integer, right ( max( c.set_id ) , 5 ) ) + 1 , 1 )
@@ -213,21 +229,6 @@ as
     select  @max_set_id =  "set" + right( "00000" +    ltrim( str( @max_set_id_index ) )   , char_length( "00000" ) ) 
 
     -- exec n2nid @max_set_id_index ,  "set", "00000",  @max_set_id output
-
-
-     /* "created_set_id" 
-     *  (1) set_id is not valid and 
-     *  (2) set_name (a) does not match an entry with a valid set_id (ie, is an existing entry)
-     */
-
-   /* invalid set_ids */
-    
-    /* actions:
-        (1) insert records into tempdb but with newly created set_ids
-        (2) update inserted records via sequence-generating select.
-       return:
-        updated records
-     */
 
     /* have to exclude matching records that were included above */
     
@@ -252,32 +253,30 @@ as
         and     not exists (select b.set_name from sets b where ins.set_name = b.set_name
                                     and b.set_id like "set[0-9][0-9][0-9][0-9][0-9]")
 
-
-
         
     update  sets 
-        set a.set_id = (
-            select "set" + right( "00000" +
-                ltrim( str(	 
+    set a.set_id = (
+        select "set" + right( "00000" +
+            ltrim( str(	 
                 isnull( convert( integer, right ( max( c.set_id ) , 5 ) ) + 1 , 1 )
-                    + (select count( b.set_name ) from sets b 
-                       where (a.set_id + a.set_name) > ( b.set_id + b.set_name ) 
-                       and b.set_id not like 'set[0-9][0-9][0-9][0-9][0-9]')
-                   ))
-               ,5)
-            from sets c where c.set_id like "set[0-9][0-9][0-9][0-9][0-9]"  -- have to confine to well-formed set_ids in order to exclude the incoming, badly-formed, set_id!
-        )
+                                + (select count( b.set_name ) from sets b 
+                                    where (a.set_id + a.set_name) > ( b.set_id + b.set_name ) 
+                                    and b.set_id not like 'set[0-9][0-9][0-9][0-9][0-9]')
+            ))
+        ,5)
+        from sets c where c.set_id like "set[0-9][0-9][0-9][0-9][0-9]"  -- have to confine to well-formed set_ids in order to exclude the incoming, badly-formed, set_id!
+    )
     from sets a, inserted ins
     where   a.set_name = ins.set_name	-- if ids are the same in inserted table, then distinguish via name.  unique index on id,name will prevent dups here.
     and     a.set_id   = ins.set_id	
     and     ins.set_id not like "set[0-9][0-9][0-9][0-9][0-9]"
     and     not exists (select * from sets b where ins.set_name = b.set_name
-                                    and b.set_id like "set[0-9][0-9][0-9][0-9][0-9]")
+    and     b.set_id like "set[0-9][0-9][0-9][0-9][0-9]")
 
 
 
     /*
-     *  auto-seq
+     *  auto-sequence for set_seq_no
      *
      * 
      *  Update node sequence numbers based on count/ranking within each set_id.
@@ -310,35 +309,30 @@ as
 
 
 
-
-    /* 
-     *  "updated"   (valid and existing set_id)
-     *
-     *
-*/
-
-/*
-    There is a unique index on sets ( set_id, set_seq_no, set_name )
-*/
-
-   /* 
-    *   Update set name.
-    *   An insertion is actually an update of set name if inserted row matches on set_id and set_seq_no.
-    *   We handle this by simply deleting the previously existing record?
-    *
-    *   Probably should actually update the existing record: some details of the row
-    *     might want to stay the same :-)
-    
-     * If an insertion matches an existing (node_id, node_seq_no) 
-     * then we have an update of the record.
-     * At this (or any) point inside this trigger there will be two records in the nodes table: 
-     * the previously existing and the newly inserted; matching on node_id, node_seq_no
-     * but differing (hopefully) on node_name (and/or any other fields (?) )
-            (this is why we cna't ahve anythong like a unique on ndoe_id, seq, it would prevent this update mechanism)
-     *
-     * Delete the record from nodes that matches node_id, node_seq_no but doesn't match node_name (...)
+    /*
+     *  deletion phase
      *
      */
+
+    /*
+     *
+     *  delete for "updated"
+     *
+     *  Delete the existing record via finding the record
+     *      that matches node_id, node_seq_no but doesn't match node_name.
+     *      ( if there are other fields that could be updated, include these fields in the "not match" )
+     *
+     *   An insertion is actually an update of set name if inserted row matches on set_id and set_seq_no.
+     *   We handle this by simply deleting the previously existing record?
+     *
+     *  At this (or any) point inside this trigger there will be two records in the nodes table: 
+     *  the previously existing and the newly inserted; matching on node_id, node_seq_no
+     *  but differing (hopefully) on node_name (and/or any other fields (?) )
+     *  (this is why we cna't ahve anythong like a unique on ndoe_id, seq, it would prevent this update mechanism)
+     *
+     *
+     */
+
 
     delete sets
             from sets, inserted 
@@ -346,33 +340,16 @@ as
     and     sets.set_seq_no = inserted.set_seq_no
     and     sets.set_name  != inserted.set_name      -- add any other fields which might be part of any possible update.
 
-    /* if we delete any rows, tell the caller about it. */
-    
     declare @deleted_row_count int
     select  @deleted_row_count = @@rowcount  
-    /* some output message format strings */
-
-    declare @msg_prefix varchar(40)
-    select @msg_prefix = 'insert trigger:      ' 
-
-    declare @msg            varchar(240)  
---    select @msg = @msg_prefix + 'rows in inserted:                    '+ convert(varchar(4), @total_rows_inserted) + "."
-
-
-    if @deleted_row_count != 0 
-    begin
-
-            select @msg = @msg_prefix + 'record(s) being deleted:    '+ convert(varchar(4), @deleted_row_count) + "."
-            print @msg -- insert trigger:      invalid set id(s) being updated:    2.
-            
-    end
  
-    /* "found"   (ie, matched on name)
-            
-        delete the record that formed the query.  no records should end up being inserted due
-            to a query
-   
-        delete those inserted rows from sets which are actually queries
+    /* 
+     *  delete for "found" 
+     *
+     *  delete the record that formed the query.  no records should end up being inserted due
+     *      to a query
+     *
+     *  delete those inserted rows from sets which are actually queries
             (but not until the end when we have already processed the other cases.)
             
         delete the one(s) which is *not* the existing, matching, one(s).
@@ -382,15 +359,36 @@ as
  
    delete sets
        from sets, inserted
-   where   inserted.set_name = sets.set_name                              --  and set_name matches
+   where    inserted.set_name = sets.set_name                              --  and set_name matches
    and      inserted.set_id not like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is invalid
-   and     sets.set_id  = inserted.set_id             -- delete the one which is *not* the existing, matching, one.
+   and      sets.set_id  = inserted.set_id             -- delete the one which is *not* the existing, matching, one.
 
 
-   /* output (returned select set) table */
+    /* if we delete any rows, tell the caller about it. */
+    
+    select  @deleted_row_count = @deleted_row_count + @@rowcount  
+
+    declare @msg_prefix varchar(40)
+    declare @msg            varchar(240)  
+
+    select @msg_prefix = 'insert trigger:      ' 
+
+    if @deleted_row_count != 0 
+    begin
+            select @msg = @msg_prefix + 'record(s) being deleted:    '+ convert(varchar(4), @deleted_row_count) + "."
+            print @msg             
+    end
+    
+
+    /*
+     *  output phase
+     *      
+     *      Return contents of temp table.
+     *
+     */
 
    select * from temp_sets_quick_look
-    order by set_id, seq -- column name of view is not "set_seq_no" because we convert to char(3) for output.
+    order by set_id, seq 
 
 
    -- /* quick/debug look at entire sets table */
@@ -400,7 +398,7 @@ as
     
     -- print "end trigger sets_insert"
 
-    return -- all we need to do for volume inserts and queries
+    return 
 
 go
 
@@ -460,9 +458,6 @@ go
  
  
  
- 
-     /* debugging display */
-   -- select @max_set_id "max set id" , @max_set_id_index  "max_set_id_index"
 
 
     /*  
