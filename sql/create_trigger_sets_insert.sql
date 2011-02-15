@@ -56,9 +56,33 @@ go
 
 create trigger sets_insert
 on sets
-for insert
+for insert, update
 
 as 
+
+    /* the 'deleted' tables is always empty 
+            for an insert trigger.  An update trigger
+            is the only trigger called for an sql UPDATE
+            even though there is an insert and delete
+            as part of an update. */
+
+    
+
+
+    declare @c int
+    select  @c = (select count(*) from deleted  )
+    --  
+    declare @p varchar(40)
+    declare @m            varchar(240)  
+    -- 
+    select @p = 'insert trigger:      ' 
+    -- 
+    if @c != 0 
+    begin
+            select @m = @p + 'select count(*) from deleted:    '+ convert(varchar(4), @c) + "."
+            print @m             
+    end
+    
 
     /* truncate output table. */
     
@@ -159,7 +183,9 @@ as
         where       ins.set_id like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is valid
         and     (select count(*) from sets b where ins.set_id = b.set_id 
                         and ins.set_seq_no = b.set_seq_no ) = 1  -- no other record with this set_id and seq_no
-
+        and     (select count(*) from   deleted d where d.set_id = ins.set_id 
+                        and d.set_seq_no = ins.set_seq_no ) = 0    -- inserted means no matching record in deleted.
+                                                                        -- a matching record in deleted means this is an update.
     /* 
      *  "inserted"      (valid and new (not pre-existing) set_id)
      *
@@ -170,29 +196,41 @@ as
      *
      */
      
+     /* an SQL UPDATE shows here as "inserted" because the original, existing, record has already been deleted.
+        so there isonly one record in the table.  ==> check for presence of record in deleted table ?? */
 
     insert tempdb..sets
         select 
             "updated(1)" "query_status", ins.set_id	,	ins.set_seq_no, ins.set_name,	ins.set_super_id   
         from inserted ins
         where       ins.set_id like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is valid
-        and     (select count(*) from sets b where ins.set_id = b.set_id 
-                        and ins.set_seq_no = b.set_seq_no ) = 2  -- just one other record with this set_id and seq_no
+        and    (  (select count(*) from sets b where ins.set_id = b.set_id 
+                        and ins.set_seq_no = b.set_seq_no ) = 2   -- just one other record with this set_id and seq_no
+                        or 
+                         (select count(*) from  deleted d where d.set_id = ins.set_id 
+                        and d.set_seq_no = ins.set_seq_no ) = 1 )  -- or there is one in the deleted pile...
 
     /* this second approach is based not on the appearance of two records but 
             more on the fact that there is an inserted name that doesn't match a record
             with set_id, seq_no but a different set_name. */
+            
+    /* If want to use this style, have to allow ("or") the case where there is a record
+            matching on set_id and set_seq_no in the "deleted" table 
+            ie, need to add logic that considers the presence of a record in the "deleted" table.
+            */
     
-    insert tempdb..sets
-        select 
-            "updated(2)" "query_status", ins.set_id	,	ins.set_seq_no, ins.set_name,	ins.set_super_id   
-        from sets, inserted ins
-        where   sets.set_id     = ins.set_id
-        and     sets.set_seq_no = ins.set_seq_no
-        and     sets.set_name  != ins.set_name      -- add any other fields which might be part of any possible update.
-        and     ins.set_id like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is valid
-     
-     
+    -- insert tempdb..sets
+    --     select 
+    --         "updated(2)" "query_status", ins.set_id  ,   ins.set_seq_no, ins.set_name,   ins.set_super_id   
+    --     from sets, inserted ins 
+    --     where   ins.set_id like "set[0-9][0-9][0-9][0-9][0-9]"     -- inserted set_id is valid
+    --     and    ( sets.set_id     = ins.set_id
+    --         and     sets.set_seq_no = ins.set_seq_no
+    --         and     sets.set_name  != ins.set_name  )  -- add any other fields which might be part of any possible update.
+    --     -- or   (select count(*) from   deleted d where d.set_id = ins.set_id 
+    --     --                 and d.set_seq_no = ins.set_seq_no ) = 1   )
+    --         
+            
     /* 
      *  "created_set_id"   (invalid set_id)
      *
@@ -215,6 +253,14 @@ as
         Since all existing records must have well-formed ids,
             the badly formed ids which would have to be from the insertion. 
         @max_set_id is the string (node_id) type value eg "set00001"
+        
+        The process to create sequential set_ids is to  count (rank)
+        the incoming (inserted) records based on a.set_id + a.set_name.  
+
+            We use set_id + set+name because (??)
+            Set_ids are possibly all the same at this point; 
+        but the combination of Set_ids and set_names will be different
+        because of the unique index).         
      */
 
 
@@ -479,42 +525,18 @@ go
     /* if match on set_name and no superset, then delete inserted set_name, superset_id 
           and return existing set.  If match on name but superset is different, then insert and return inserted. */
 
-          /* a subsequent insert of an identical name should "find" the first:  "found", "set00001", etc., not "created", "set00002", etc. 
-          */
 
-        
---    delete sets where a.set_name = "Albert Einstein" and a.set_id = ""
---    from sets a, inserted
---    where   a.set_name = inserted.set_name	-- if ids are the same in inserted table, then distinguish via name.  unique index on id,name will prevent dups here.
---   and     a.set_id   = inserted.set_id	
---    and     inserted.set_id not like "set[0-9][0-9][0-9][0-9][0-9]"
-
-
-    /* Create sequential set_ids by counting (ranking)
-        the incoming (inserted) records based on a.set_id + a.set_name.  
-        Set_ids are possibly all the same at this point; 
-        but the combination of Set_ids and set_names will be different
-        because of the unique index). */
-        
-        
-    /*  update the output table */
-    
-/*
-    update  tempdb..sets 
-        set a.set_id = (
-            select "set" + right( "00000" +
-                ltrim( str(	 
-                    @max_set_id_index 
-                    + (select count( b.set_name ) from sets b 
-                       where (a.set_id + a.set_name) > ( b.set_id + b.set_name ) 
-                       and b.set_id not like 'set[0-9][0-9][0-9][0-9][0-9]')
-                   ))
-               ,5)
-        )
-    from tempdb..sets a, inserted
-    where   a.set_name = inserted.set_name	-- if ids are the same in inserted table, then distinguish via name.  unique index on id,name will prevent dups here.
-    and     a.set_id   = inserted.set_id	
-    and     inserted.set_id not like "set[0-9][0-9][0-9][0-9][0-9]"
-
-*/
-        
+    -- declare @c int
+    -- select  @c = (select count(*) from deleted  )
+    -- --  
+    -- declare @p varchar(40)
+    -- declare @m            varchar(240)  
+    -- -- 
+    -- select @p = 'insert trigger:      ' 
+    -- -- 
+    -- -- if @c != 0 
+    -- begin
+    --         select @m = @p + 'select count(*) from deleted:    '+ convert(varchar(4), @c) + "."
+    --         print @m             
+    -- end
+    -- 

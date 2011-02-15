@@ -256,22 +256,16 @@ go
 --
 --      Expect:
 --
+--      report from trigger about there being a record present in the trigger table "deleted" (if we want this report)
+--
 --      updated name for and existing node_id+seq_no combination
---      report from trigger about original record being deleted.
 --
 --
--- insert trigger:      record(s) being deleted:    1.
+--  insert trigger:      select count(*) from deleted:    1.
 --
---  updated(1)         set00005 1   NULL         Alan Turing (updated)                                            
---  updated(2)         set00005 1   NULL         Alan Turing (updated)                                            
+--   updated(1)         set00005 1   NULL         Alan M. Turing (update3)                                         --
 --
 --
---      Currently:
--- 
---      no result set returned?
-
---      (1 row affected)
-
 ------------------------------------------------------------------------
 
 
@@ -292,17 +286,53 @@ go
 --
 --      Expect:
 --
+--      report from trigger about there being a record present in the trigger table "deleted" (if we want this report)
+--
 --      updated name for and existing node_id+seq_no combination
---      report from trigger about original record being deleted?
 --
---      have to write logic to consider that the delete of an update-type insert has already happened.?
+--      added logic to both "inserted" and "updated" case to consider the presence of a record in the "deleted" table.
 --
 --
--- insert trigger:      record(s) being deleted:    1.
+--  insert trigger:      select count(*) from deleted:    1.
 --
---  updated(1)         set00005 1   NULL         Alan Turing (updated)                                            
---  updated(2)         set00005 1   NULL         Alan Turing (updated)                                            
+--  updated(1)         set00005 1   NULL         Alan M. Turing (update4)                                         
 --
+--
+------------------------------------------------------------------------
+
+------------------------------------------------------------------------
+-- 
+--      test113:    sql UPDATE statement test 3
+--
+--      update name multiple records
+-- 
+-- 
+--
+
+UPDATE sets
+    set set_name = 'Albert Einstein'
+    where   set_name like 'Albert Einstein%'
+
+go
+--
+--      Expect:
+--
+--      report from trigger about four (4) records present in table "deleted".
+--
+--      updated name(s) for all matching records
+--
+--      added logic to both "inserted" and "updated" case to consider the presence of a record in the "deleted" table.
+--
+
+--      Current:
+--
+--       insert trigger:      select count(*) from deleted:    4.
+--
+--          updated(1)         set00001 1   NULL         Albert Einstein                                                  
+--          updated(1)         set00001 2   NULL         Albert Einstein                                                  
+--          updated(1)         set00001 3   NULL         Albert Einstein                                                  
+--          updated(1)         set00002 1   NULL         Albert Einstein                                                  
+
 ------------------------------------------------------------------------
 
 ------------------------------------------------------------------------
@@ -339,7 +369,7 @@ go
 
 
 /*
-Mon Feb 14 07:27:03 PST 2011
+Tue Feb 15 12:04:02 PST 2011
  query_status_quick set_id   seq set_super_id set_name_64                                                      
  ------------------ -------- --- ------------ ---------------------------------------------------------------- 
  created_set_id     set00001 1   NULL         Albert Einstein                                                  
@@ -377,9 +407,8 @@ insert trigger:      record(s) being deleted:    1.
  query_status_quick set_id   seq set_super_id set_name_64                                                      
  ------------------ -------- --- ------------ ---------------------------------------------------------------- 
  updated(1)         set00001 1   NULL         Albert Einstein (updated)                                        
- updated(2)         set00001 1   NULL         Albert Einstein (updated)                                        
 
-(2 rows affected)
+(1 row affected)
 (1 row affected)
  query_status_quick set_id   seq set_super_id set_name_64                                                      
  ------------------ -------- --- ------------ ---------------------------------------------------------------- 
@@ -407,9 +436,8 @@ insert trigger:      record(s) being deleted:    1.
  query_status_quick set_id   seq set_super_id set_name_64                                                      
  ------------------ -------- --- ------------ ---------------------------------------------------------------- 
  updated(1)         set00005 1   NULL         Alan Turing (updated)                                            
- updated(2)         set00005 1   NULL         Alan Turing (updated)                                            
 
-(2 rows affected)
+(1 row affected)
 (1 row affected)
 insert trigger:      record(s) being deleted:    1.
  query_status_quick set_id   seq set_super_id set_name_64                                                      
@@ -428,14 +456,36 @@ insert trigger:      record(s) being deleted:    1.
 (2 rows affected)
 (2 rows affected)
 (1 row affected)
+insert trigger:      select count(*) from deleted:    1.
+ query_status_quick set_id   seq set_super_id set_name_64                                                      
+ ------------------ -------- --- ------------ ---------------------------------------------------------------- 
+ updated(1)         set00005 1   NULL         Alan M. Turing (update3)                                         
+
 (1 row affected)
 (1 row affected)
+insert trigger:      select count(*) from deleted:    1.
+ query_status_quick set_id   seq set_super_id set_name_64                                                      
+ ------------------ -------- --- ------------ ---------------------------------------------------------------- 
+ updated(1)         set00005 1   NULL         Alan M. Turing (update4)                                         
+
+(1 row affected)
+(1 row affected)
+insert trigger:      select count(*) from deleted:    4.
+ query_status_quick set_id   seq set_super_id set_name_64                                                      
+ ------------------ -------- --- ------------ ---------------------------------------------------------------- 
+ updated(1)         set00001 1   NULL         Albert Einstein                                                  
+ updated(1)         set00001 2   NULL         Albert Einstein                                                  
+ updated(1)         set00001 3   NULL         Albert Einstein                                                  
+ updated(1)         set00002 1   NULL         Albert Einstein                                                  
+
+(4 rows affected)
+(4 rows affected)
 quick/debug look at entire sets table
  set_id   seq set_super_id set_name                                                         
  -------- --- ------------ ---------------------------------------------------------------- 
- set00001 1   NULL         Albert Einstein (updated)                                        
- set00001 2   NULL         Albert Einstein 2                                                
- set00001 3   NULL         Albert Einstein (third)                                          
+ set00001 1   NULL         Albert Einstein                                                  
+ set00001 2   NULL         Albert Einstein                                                  
+ set00001 3   NULL         Albert Einstein                                                  
  set00002 1   NULL         Albert Einstein                                                  
  set00002 2   NULL         Second record second synonym                                     
  set00003 1   NULL         Alonso Church                                                    
