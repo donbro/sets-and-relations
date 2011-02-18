@@ -345,18 +345,19 @@ select * from sets_short_view
 go
 --
 --
---         set_id   seq set_super_id set_name                                                         
---         -------- --- ------------ ---------------------------------------------------------------- 
---         set00001 1   NULL         Albert Einstein (updated)                                        
---         set00001 2   NULL         Albert Einstein 2                                                
---         set00001 3   NULL         Albert Einstein (third)                                          
---         set00002 1   NULL         Albert Einstein                                                  
---         set00002 2   NULL         Second record second synonym                                     
---         set00003 1   NULL         Alonso Church                                                    
---         set00004 1   NULL         Kurt Gödel                                                      
---         set00005 1   NULL         Alan M. Turing (update4)                                         
---         set00005 2   NULL         A. M. Turing                                                     
---         set00007 1   NULL         Alfred Tarski                                                    
+--          set_id   seq set_super_id set_name                                                         
+--          -------- --- ------------ ---------------------------------------------------------------- 
+--          set00001 1   NULL         Albert Einstein                                                  
+--          set00001 2   NULL         Albert Einstein                                                  
+--          set00001 3   NULL         Albert Einstein                                                  
+--          set00002 1   NULL         Albert Einstein                                                  
+--          set00002 2   NULL         Second record second synonym                                     
+--          set00003 1   NULL         Alonso Church                                                    
+--          set00004 1   NULL         Kurt Gödel                                                      
+--          set00005 1   NULL         Alan M. Turing (update4)                                         
+--          set00005 2   NULL         A. M. Turing                                                     
+--          set00007 1   NULL         Alfred Tarski                                                    
+--
 --
 --
 ------------------------------------------------------------------------
